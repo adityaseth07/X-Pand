@@ -236,6 +236,37 @@ async def list_cities():
 
 
 # ──────────────────────────────────────────────────────────────────────
+# GET /grid
+# ──────────────────────────────────────────────────────────────────────
+
+@app.get("/grid")
+async def get_grid(
+    city: str = Query(default="delhi", description="City to load grid for")
+):
+    """Return array of grid cells with coordinates for frontend map."""
+    city_key = city.lower().strip()
+    cdata = ml.city_data.get(city_key)
+    
+    if not cdata or "grid_gdf" not in cdata:
+        # Fallback to delhi or empty
+        cdata = ml.city_data.get("delhi")
+        if not cdata or "grid_gdf" not in cdata:
+            return []
+
+    grid_gdf = cdata["grid_gdf"]
+    
+    # Needs to return [{grid_id, lat, lon}, ...]
+    cells = []
+    for _, row in grid_gdf.iterrows():
+        cells.append({
+            "grid_id": row["grid_id"],
+            "lat": round(float(row["centroid_lat"]), 5),
+            "lon": round(float(row["centroid_lon"]), 5),
+        })
+    return cells
+
+
+# ──────────────────────────────────────────────────────────────────────
 # POST /predict
 # ──────────────────────────────────────────────────────────────────────
 
