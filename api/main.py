@@ -218,7 +218,7 @@ def _get_training_data(feature_names):
 # ──────────────────────────────────────────────────────────────────────
 
 @app.get("/cities", response_model=CityListResponse)
-async def list_cities():
+def list_cities():
     """Return all available cities with metadata."""
     cities = []
     for city_key, cfg in CITY_CONFIGS.items():
@@ -240,7 +240,7 @@ async def list_cities():
 # ──────────────────────────────────────────────────────────────────────
 
 @app.get("/grid")
-async def get_grid(
+def get_grid(
     city: str = Query(default="delhi", description="City to load grid for")
 ):
     """Return array of grid cells with coordinates for frontend map."""
@@ -271,7 +271,7 @@ async def get_grid(
 # ──────────────────────────────────────────────────────────────────────
 
 @app.post("/predict", response_model=PredictResponse)
-async def predict(request: PredictRequest):
+def predict(request: PredictRequest):
     """Per-location prediction with SHAP top-3 drivers."""
     try:
         city_key = request.city.lower().strip()
@@ -303,18 +303,9 @@ async def predict(request: PredictRequest):
                 shap_drivers = []
             else:
                 cold = False
-                if is_delhi and X_train is not None and y_train is not None:
-                    mean_p, ci_lower, ci_upper = predict_with_ci(
-                        ml.lgbm_model, X_row, X_train, y_train,
-                        n_bootstrap=20,
-                    )
-                    p_val = float(mean_p[0])
-                    ci_lo = float(ci_lower[0])
-                    ci_hi = float(ci_upper[0])
-                else:
-                    proba = ml.lgbm_model.predict_proba(X_row)[:, 1]
-                    p_val = float(proba[0])
-                    ci_lo, ci_hi = None, None
+                proba = ml.lgbm_model.predict_proba(X_row)[:, 1]
+                p_val = float(proba[0])
+                ci_lo, ci_hi = None, None
 
                 # SHAP drivers
                 shap_drivers = []
@@ -355,7 +346,7 @@ async def predict(request: PredictRequest):
 # ──────────────────────────────────────────────────────────────────────
 
 @app.post("/batch", response_model=PredictResponse)
-async def batch_predict(request: PredictRequest, response: Response):
+def batch_predict(request: PredictRequest, response: Response):
     """
     High-throughput batch prediction — vectorised.
     Now multi-city aware: scores any city with the same LightGBM model.
@@ -506,7 +497,7 @@ async def batch_predict(request: PredictRequest, response: Response):
 # ──────────────────────────────────────────────────────────────────────
 
 @app.post("/optimize", response_model=OptimizeResponse)
-async def optimize(request: OptimizeRequest):
+def optimize(request: OptimizeRequest):
     """
     Run BIP hub-placement optimisation over LIVE LightGBM-predicted
     profitability scores — NOT static / pre-loaded data.
@@ -539,9 +530,10 @@ async def optimize(request: OptimizeRequest):
             probs = ml.lgbm_model.predict_proba(X_batch)[:, 1]
             probs = np.clip(probs, 0.005, 0.995)  # No exact 0% or 100%
             gid_to_prob = dict(zip(valid_gids, probs.astype(float)))
-            for gid, prob in gid_to_prob.items():
-                mask = gdf["grid_id"].astype(str) == gid
-                gdf.loc[mask, "p_profit"] = prob
+            
+            # Vectorised mapping: insanely faster than row-by-row gdf.loc masking
+            gdf_gids_str = gdf["grid_id"].astype(str)
+            gdf["p_profit"] = gdf_gids_str.map(gid_to_prob).fillna(gdf["p_profit"])
 
         n_total = len(gdf)
         n_eligible = int((gdf["p_profit"] >= request.min_prob_threshold).sum())
@@ -645,7 +637,7 @@ _last_optimization = {}
 
 
 @app.get("/status")
-async def system_status():
+def system_status():
     """
     Returns live system status and last optimization result.
     This endpoint is called by browser-side JavaScript so it
@@ -672,7 +664,7 @@ async def system_status():
 
 
 @app.get("/last_result")
-async def last_optimization_result():
+def last_optimization_result():
     """
     Returns the most recent optimization result instantly (cached).
     Called by browser-side JS so the response appears in DevTools.
@@ -690,7 +682,8 @@ async def last_optimization_result():
     }
 
 @app.get("/top")
-async def get_top_locations(
+@app.get("/top_n")
+def get_top_locations(
     n: int = Query(default=5, ge=1, le=50,
                    description="Number of top locations to return"),
     min_prob: float = Query(default=0.0,
@@ -768,6 +761,20 @@ async def get_top_locations(
         raise RuntimeError(f"[main.get_top_locations] Failed: {exc}") from exc
 
 
+@app.get("/cache")
+def get_cache_status():
+    """
+    Returns the status of the cached ML models and data.
+    """
+    import datetime
+    return {
+        "status": "active",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "cached_entities": list(ml.city_data.keys()),
+        "message": "Cache is warm and ready."
+    }
+
+
 # ──────────────────────────────────────────────────────────────────────
 # GET /geocode — Reverse geocoding via Nominatim
 # ──────────────────────────────────────────────────────────────────────
@@ -822,7 +829,7 @@ def _reverse_geocode_cached(lat_round, lon_round):
 
 
 @app.get("/geocode")
-async def reverse_geocode(
+def reverse_geocode(
     lat: float = Query(..., description="Latitude"),
     lon: float = Query(..., description="Longitude"),
 ):

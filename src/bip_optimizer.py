@@ -13,6 +13,7 @@ Hard 60-second solve time limit.
 import math
 import numpy as np
 import pulp
+from sklearn.neighbors import BallTree
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -115,13 +116,21 @@ def run_bip(gdf, prob_col, max_hubs, min_separation_km, min_prob_threshold):
         lats = eligible["centroid_lat"].values.astype(float)
         lons = eligible["centroid_lon"].values.astype(float)
 
-        # ── Step 2: Pairwise Haversine distances ─────────────────────
+        # ── Step 2: Pairwise Haversine distances (Optimised) ─────────
         conflict_pairs = []
-        for i in range(n_eligible):
-            for j in range(i + 1, n_eligible):
-                dist = _haversine_km(lats[i], lons[i], lats[j], lons[j])
-                if dist < min_separation_km:
-                    conflict_pairs.append((i, j))
+        if n_eligible > 1:
+            # Use a spatial index (BallTree) in radians -> O(N log N)
+            coords_rad = np.radians(np.column_stack((lats, lons)))
+            tree = BallTree(coords_rad, metric="haversine")
+            
+            # Query all neighbours within radius (km / 6371.0)
+            radius_rad = min_separation_km / 6371.0
+            indices = tree.query_radius(coords_rad, r=radius_rad)
+            
+            for i, neighbours in enumerate(indices):
+                for j in neighbours:
+                    if i < j:  # Only add each pair once, exclude self
+                        conflict_pairs.append((i, j))
 
         print(
             f"[bip_optimizer] Separation conflicts (< {min_separation_km} km): "
