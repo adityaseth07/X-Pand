@@ -84,6 +84,7 @@ sequenceDiagram
 - **High-Fidelity UI**: A modern, glassmorphic React SPA with fluid animations and interactive map visualizations.
 - **ML Interpretability**: Full SHAP explanations for every prediction, identifying the top drivers of profitability.
 - **Strategic Optimization**: Solve complex hub-placement problems under business constraints in real-time.
+- **Financial ROI Modeling**: Synthesizes setup cost (CAPEX) per cell dynamically based on property metrics like population density and commercial activity (road density) to frame decisions in INR.
 - **Live Monitoring**: Real-time status tracking for model caching and system health.
 
 ---

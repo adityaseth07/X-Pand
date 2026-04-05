@@ -154,6 +154,34 @@ def _recommendation_label(p):
     return "skip"
 
 
+def _calculate_estimated_cost(feat_dict, city_key):
+    """
+    Calculate an estimated CAPEX setup cost for a hub based on local geography.
+    Returns value in INR (e.g., 2500000).
+    """
+    # 1. Base Cost per City Tier
+    tier_1_cities = {"delhi", "mumbai", "bangalore"}
+    base_cost = 1500000 if city_key in tier_1_cities else 800000
+    
+    # 2. Extract specific features if available
+    pop_density = feat_dict.get("pop_density", 5000)
+    income_index = feat_dict.get("income_index", 0.5)
+    road_density = feat_dict.get("road_density", 5)
+
+    # 3. Apply Multipliers
+    income_multiplier = 1.0 + (income_index * 1.5) 
+    density_multiplier = 1.0 + (min(pop_density, 30000) / 30000) * 0.8
+    commercial_multiplier = 1.0 + (min(road_density, 20) / 20) * 0.4
+
+    final_cost = base_cost * income_multiplier * density_multiplier * commercial_multiplier
+    
+    # Add a slight random noise based on pop_density to avoid identical numbers
+    noise = (pop_density % 100) * 1000 
+    
+    # Round to nearest 50k
+    return round((final_cost + noise) / 50000) * 50000
+
+
 def _build_feature_row(grid_id, feature_names, city_key="delhi"):
     """Look up a single grid cell's feature vector."""
     try:
@@ -337,6 +365,10 @@ def predict(request: PredictRequest):
                     print(f"SHAP EXTRACTION FAILED: {e}")
                     traceback.print_exc()
                     shap_drivers = []
+                    
+                # Calculate estimated setup cost
+                feat_dict = dict(zip(feat_names, X_row))
+                estimated_cost = _calculate_estimated_cost(feat_dict, city_key)
 
             rec = _recommendation_label(p_val)
             results.append(
@@ -347,6 +379,7 @@ def predict(request: PredictRequest):
                     p_profit=round(p_val, 6),
                     ci_lower=round(ci_lo, 6) if ci_lo is not None else None,
                     ci_upper=round(ci_hi, 6) if ci_hi is not None else None,
+                    estimated_cost=estimated_cost,
                     recommendation=rec,
                     shap_drivers=shap_drivers,
                     is_cold_start=cold,
@@ -405,6 +438,7 @@ def batch_predict(request: PredictRequest, response: Response):
         p_profits = np.full(n_total, np.nan, dtype=np.float64)
         ci_lowers = np.full(n_total, np.nan, dtype=np.float64)
         ci_uppers = np.full(n_total, np.nan, dtype=np.float64)
+        estimated_costs = np.full(n_total, np.nan, dtype=np.float64)
 
         # ── Cold-start -> Thompson Sampling ───────────────────────────
         for i in cold_indices:
@@ -412,6 +446,8 @@ def batch_predict(request: PredictRequest, response: Response):
                 p_profits[i] = ts.get_probability_estimate(grid_ids_all[i])
             except Exception:
                 p_profits[i] = 0.5
+            # We don't have features, so default cost
+            estimated_costs[i] = _calculate_estimated_cost({}, city_key)
 
         # ── Historical -> ONE batch LightGBM call ─────────────────────
         if hist_grid_ids:
@@ -459,6 +495,10 @@ def batch_predict(request: PredictRequest, response: Response):
                     p_profits[orig_idx] = mean_p[batch_idx]
                     ci_lowers[orig_idx] = ci_lo_batch[batch_idx]
                     ci_uppers[orig_idx] = ci_hi_batch[batch_idx]
+                    
+                    # Calculate estimated cost
+                    feat_dict = dict(zip(feat_names, X_batch[batch_idx]))
+                    estimated_costs[orig_idx] = _calculate_estimated_cost(feat_dict, city_key)
 
             # Missing feature data -> cold-start
             missing_hist = set(range(len(hist_grid_ids))) - set(valid_positions)
@@ -470,6 +510,7 @@ def batch_predict(request: PredictRequest, response: Response):
                 except Exception:
                     p_profits[orig_idx] = 0.5
                 cold_flags[orig_idx] = True
+                estimated_costs[orig_idx] = _calculate_estimated_cost({}, city_key)
 
         # ── Assemble results ──────────────────────────────────────────
         results = []
@@ -478,6 +519,7 @@ def batch_predict(request: PredictRequest, response: Response):
             p_val = float(p_profits[i]) if not np.isnan(p_profits[i]) else 0.5
             ci_lo = float(ci_lowers[i]) if not np.isnan(ci_lowers[i]) else None
             ci_hi = float(ci_uppers[i]) if not np.isnan(ci_uppers[i]) else None
+            est_c = float(estimated_costs[i]) if not np.isnan(estimated_costs[i]) else None
             rec = _recommendation_label(p_val)
 
             results.append(
@@ -488,6 +530,7 @@ def batch_predict(request: PredictRequest, response: Response):
                     p_profit=round(p_val, 6),
                     ci_lower=round(ci_lo, 6) if ci_lo is not None else None,
                     ci_upper=round(ci_hi, 6) if ci_hi is not None else None,
+                    estimated_cost=est_c,
                     recommendation=rec,
                     shap_drivers=[],
                     is_cold_start=cold_flags[i],

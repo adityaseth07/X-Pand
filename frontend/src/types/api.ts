@@ -18,6 +18,7 @@ export interface PredictionResult {
   p_profit: number
   ci_lower: number | null
   ci_upper: number | null
+  estimated_cost: number | null
   recommendation: string
   shap_drivers: SHAPDriver[]
   is_cold_start: boolean

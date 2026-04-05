@@ -53,6 +53,7 @@ class PredictionResult(BaseModel):
     p_profit: float
     ci_lower: Optional[float]
     ci_upper: Optional[float]
+    estimated_cost: Optional[float] = None
     recommendation: str
     shap_drivers: List[SHAPDriver]
     is_cold_start: bool

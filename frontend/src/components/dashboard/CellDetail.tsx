@@ -258,6 +258,14 @@ export default function CellDetail() {
               ? 'Moderate potential. Monitor market conditions and competition before committing.'
               : 'Low probability of profitability. Explore alternative locations.'}
           </p>
+          <div className="mt-4 pt-4 border-t border-[rgba(255,255,255,0.06)] flex justify-between items-center">
+            <span className="text-xs text-text-muted font-heading tracking-wide">EST. SETUP COST</span>
+            <span className="font-heading font-bold text-accent-blue tabular-nums text-lg">
+              {detail.estimated_cost != null
+                ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(detail.estimated_cost)
+                : 'N/A'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
