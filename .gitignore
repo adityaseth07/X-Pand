@@ -18,8 +18,10 @@ ENV/
 ehthumbs.db
 Thumbs.db
 
-# Data (Excluding processed data for repo size)
-data/processed/
+# Data (ignore large derived files, keep essential artifacts)
+data/processed/combined_features.csv
+data/processed/combined_features.geojson
+data/processed/weights_matrix.pkl
 data/combined_features.geojson
 
 # Models (Keep small models, ignore large ones if any)
