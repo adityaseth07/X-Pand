@@ -278,11 +278,8 @@ def predict(request: PredictRequest):
         grid_gdf, feats_df, ts = _get_city_data(city_key)
         feat_names = _feature_names_for_city(city_key)
 
-        # For Delhi, we can do bootstrap CI; for others, just point estimates
-        is_delhi = (city_key == "delhi")
-        X_train, y_train = (None, None)
-        if is_delhi:
-            X_train, y_train = _get_training_data(feat_names)
+        # No longer need X_train/y_train since we use calibrated estimators for CI
+        pass
 
         results = []
         for loc in request.locations:
@@ -305,7 +302,25 @@ def predict(request: PredictRequest):
                 cold = False
                 proba = ml.lgbm_model.predict_proba(X_row)[:, 1]
                 p_val = float(proba[0])
-                ci_lo, ci_hi = None, None
+
+                try:
+                    cal_estimators = ml.lgbm_model.calibrated_classifiers_
+                    if len(cal_estimators) >= 2:
+                        est_probs = []
+                        for cal_est in cal_estimators:
+                            ep = cal_est.predict_proba(X_row)[:, 1]
+                            est_probs.append(ep)
+                        est_stack = np.stack(est_probs, axis=0)
+                        raw_lo = float(np.percentile(est_stack, 5, axis=0)[0])
+                        raw_hi = float(np.percentile(est_stack, 95, axis=0)[0])
+                    else:
+                        raw_lo, raw_hi = p_val, p_val
+                except Exception:
+                    raw_lo, raw_hi = p_val, p_val
+
+                min_half = 0.02 + 0.05 * (1.0 - abs(p_val - 0.5) * 2)
+                ci_lo = max(0.005, min(raw_lo, p_val - min_half))
+                ci_hi = min(0.995, max(raw_hi, p_val + min_half))
 
                 # SHAP drivers
                 shap_drivers = []
@@ -317,7 +332,10 @@ def predict(request: PredictRequest):
                         SHAPDriver(feature=d["feature"], impact=d["impact"])
                         for d in drivers
                     ]
-                except Exception:
+                except Exception as e:
+                    import traceback
+                    print(f"SHAP EXTRACTION FAILED: {e}")
+                    traceback.print_exc()
                     shap_drivers = []
 
             rec = _recommendation_label(p_val)

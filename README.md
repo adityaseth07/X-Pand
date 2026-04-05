@@ -136,7 +136,6 @@ The application will be available at [http://localhost:5173](http://localhost:51
 ```
 X-Pand/
 ├── api/                # FastAPI application & model loaders
-├── app/                # (Legacy) Streamlit dashboard
 ├── data/
 │   ├── raw/            # Delivery zones & demographics
 │   └── processed/      # Grid GeoJSON & feature pickles
