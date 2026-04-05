@@ -326,6 +326,7 @@ def predict(request: PredictRequest):
                 ci_lo, ci_hi = None, None
                 cold = True
                 shap_drivers = []
+                estimated_cost = None
             else:
                 cold = False
                 proba = ml.lgbm_model.predict_proba(X_row)[:, 1]
@@ -367,7 +368,7 @@ def predict(request: PredictRequest):
                     shap_drivers = []
                     
                 # Calculate estimated setup cost
-                feat_dict = dict(zip(feat_names, X_row))
+                feat_dict = dict(zip(feat_names, X_row[0]))
                 estimated_cost = _calculate_estimated_cost(feat_dict, city_key)
 
             rec = _recommendation_label(p_val)
@@ -389,7 +390,10 @@ def predict(request: PredictRequest):
         return PredictResponse(predictions=results, city=city_key)
 
     except Exception as exc:
-        raise RuntimeError(f"[main.predict] Failed: {exc}") from exc
+        import traceback
+        traceback.print_exc()
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ──────────────────────────────────────────────────────────────────────
