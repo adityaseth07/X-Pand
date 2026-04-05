@@ -11,10 +11,8 @@ mgwr
 scipy
 pulp
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 joblib
-streamlit
-pydeck
-optuna
+requests
 mapclassify
